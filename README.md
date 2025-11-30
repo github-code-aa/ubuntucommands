@@ -67,4 +67,83 @@
     
 -   `sudo apt install zip unzip -y`  → Installs ZIP tools if missing on Ubuntu
 
+# Kill ALL web servers
+
+`sudo systemctl stop nginx apache2 || true`
+`sudo fuser -k 80/tcp 80/udp 443/tcp 443/udp`
+`sudo fuser -k [::]:80 [::]:443`
+
+**Verify ports FREE**
+`sudo ss -tulpn | grep -E ':(80|443)'`
+ *Expected: NOTHING returned*
+
+ **Check no services running**
+`sudo systemctl status nginx apache2 --no-pager`
+
+# Install / Verify nginx
+`sudo  apt update `
+`sudo  apt  install nginx certbot python3-certbot-nginx -y `
+`sudo systemctl enable nginx `
+`sudo systemctl start nginx`
+ `sudo systemctl status nginx`
+
+#  Firewall - Open Web Ports
+
+`sudo ufw allow 'Nginx Full'` (nginix must be installed)
+`sudo ufw allow 80/tcp`
+`sudo ufw allow 443/tcp`
+`sudo ufw status`
+***Expected: 80,443 ALLOW***
+
+# Upload file via SCP
+`scp -r . user@Ip:/var/www/masapi`
+
+# Deploy React App (Zip Method)
+**Create directory**
+`sudo mkdir -p /var/www/appname`
+`sudo chown -R $USER:$USER /var/www/appname`
+
+**Upload your build.zip to server (via SFTP/SCP)
+Then extract:**
+
+`unzip /path/to/react-build.zip -d /var/www/appname/`
+`sudo chown -R www-data:www-data /var/www/appname`
+`sudo chmod -R 755 /var/www/appname`
+
+**Verify**
+`ls -la /var/www/appname/`  # index.html exists?
+
+Configure Nginx
+`sudo nano /etc/nginx/sites-available/appname`
+
+Config
+
+    server {
+    listen 80;
+    server_name domain.com www.domain.com;
+    
+    root /var/www/appname;
+    index index.html;
+    
+    # React SPA routing (critical!)
+    location / {
+        try_files $uri $uri/ /index.html;
+	    }
+	}
+
+**Enable site**
+
+    sudo ln -s /etc/nginx/sites-available/appname /etc/nginx/sites-enabled/
+    sudo rm -f /etc/nginx/sites-enabled/default
+    sudo nginx -t
+    sudo systemctl reload nginx
+    
+**Test HTTP**
+
+    curl -I http://localhost
+    curl -I http://domain.com
+    curl ifconfig.me
+   
+   **SSL**
+  ` sudo certbot --nginx -d domain.com -d www.domain.com`
 
