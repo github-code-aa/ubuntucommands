@@ -147,3 +147,82 @@ Config
    **SSL**
   ` sudo certbot --nginx -d domain.com -d www.domain.com`
 
+## Install MSSQL on Docker
+**Install Docker**
+
+    sudo apt update && sudo apt install docker.io -y
+    sudo systemctl enable --now docker
+
+ **Create data directory**
+
+    sudo mkdir -p /var/opt/mssql
+    sudo chown 10001:0 /var/opt/mssql
+    sudo chmod 777 /var/opt/mssql
+
+# Install MSSQL Tools
+
+ **Import Microsoft repo key**
+`curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -`
+
+ **Add Microsoft SQL Server tools repo**
+`curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list`
+
+ **Update and install**
+
+    sudo apt-get update
+    sudo apt-get install -y mssql-tools unixodbc-dev 
+
+ **Run MSSQL 2022 (Ubuntu 22.04 base - 100% stable)**
+
+    sudo docker run -d \
+      --name mssql \
+      -e "ACCEPT_EULA=Y" \
+      -e "MSSQL_SA_PASSWORD=StrongPass123" \
+      -p 1433:1433 \
+      -v /var/opt/mssql:/var/opt/mssql \
+      mcr.microsoft.com/mssql/server:2022-latest
+   **Firewall**
+  
+
+     sudo ufw allow 1433/tcp
+     sudo ufw status
+
+# Restore Database on docker mssql
+
+    curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+    sudo apt update && sudo ACCEPT_EULA=Y apt install -y mssql-tools18 unixodbc-dev
+    echo 'export PATH="$PATH:/opt/mssql-tools18/bin"' >> ~/.bashrc && source ~/.bashrc
+
+ **Create backups dir in container**
+`sudo docker exec mssql mkdir -p /var/opt/mssql/backups`
+
+ **Copy your backup** 
+`sudo docker cp /opt/mssql-backups/db_a90de0_rkgdb_11_29_2025.bak mssql:/var/opt/mssql/backups/`
+
+**Restore your backup** 
+    sudo docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd -S localhost,1433 -U sa -P 'India@12345' -C -Q "
+    USE master;
+    GO
+    RESTORE DATABASE rkgdb 
+    FROM DISK = '/var/opt/mssql/backups/db_a90de0_rkgdb_11_29_2025.bak'
+    WITH MOVE 'rkgdb_Data' TO '/var/opt/mssql/data/rkgdb.mdf',
+         MOVE 'rkgdb_Log' TO '/var/opt/mssql/data/rkgdb.ldf',
+         REPLACE;
+    GO"
+    
+**Take your backup** 
+
+    sudo docker exec -it mssql /opt/mssql-tools18/bin/sqlcmd -S localhost,1433 -U sa -P 'India@12345' -C -Q "
+    BACKUP DATABASE rkgdb 
+    TO DISK = '/var/opt/mssql/backups/rkgdb_host_backup.bak'
+    WITH COMPRESSION, INIT;
+    GO"
+
+    sudo docker cp mssql:/var/opt/mssql/backups/rkgdb_host_backup.bak /opt/mssql-backups/
+
+**Cleanup backup from docker**
+
+    sudo docker exec mssql ls -la /var/opt/mssql/backups/
+    sudo docker exec mssql rm /var/opt/mssql/backups/db_a90de0_rkgdb_11_29_2025.bak
+   `sudo docker exec mssql rm -f /var/opt/mssql/backups/*.bak`
