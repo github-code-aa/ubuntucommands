@@ -226,3 +226,14 @@ Config
     sudo docker exec mssql ls -la /var/opt/mssql/backups/
     sudo docker exec mssql rm /var/opt/mssql/backups/db_a90de0_rkgdb_11_29_2025.bak
    `sudo docker exec mssql rm -f /var/opt/mssql/backups/*.bak`
+
+# setup app on pm2
+ **Global install (recommended)** 
+
+    sudo  npm  install -g pm2 
+    Verify pm2 --version
+    
+    cd /var/www/webapp
+    PORT=8080 pm2 start index.js --name webappname
+    pm2 save pm2 startup
+    pm2 status 
