@@ -237,3 +237,125 @@ Config
     PORT=8080 pm2 start index.js --name webappname
     pm2 save pm2 startup
     pm2 status 
+---
+
+# MSSQL Docker Automated Backup Documentation
+
+This document describes the step-by-step setup for **daily automated SQL Server backups** when SQL Server is running inside a Docker container.
+
+## Prerequisites
+
+- SQL Server running inside Docker
+- Container name: `mssql`
+
+## Backup Script
+
+### Script Content
+
+```bash
+#!/bin/bash
+
+set -e
+
+CONTAINER="mssql"
+SA_PASSWORD="India@12345"
+CONTAINER_BACKUP_DIR="/var/opt/mssql/backups"
+HOST_BACKUP_DIR="/opt/mssql-backups"
+
+DATE=$(date +%F)
+TIME=$(date +%H%M%S)
+
+echo "Starting MSSQL backup at $DATE $TIME"
+
+# Create host directory for today's backups
+mkdir -p "$HOST_BACKUP_DIR/$DATE"
+
+# 1. Remove all old backups inside container
+echo "Cleaning old backups inside container..."
+sudo docker exec $CONTAINER bash -c "rm -f $CONTAINER_BACKUP_DIR/*.bak"
+
+# 2. Fetch list of user databases
+echo "Fetching database list..."
+DATABASES=$(sudo docker exec $CONTAINER \
+  /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost,1433 \
+  -U sa \
+  -P "$SA_PASSWORD" \
+  -C \
+  -h -1 -W \
+  -Q "SET NOCOUNT ON;
+      SELECT name FROM sys.databases
+      WHERE name NOT IN ('master','model','msdb','tempdb')")
+
+# 3. Backup and verify each database
+for DB in $DATABASES
+do
+  BACKUP_FILE="${DB}_${DATE}_${TIME}.bak"
+  BACKUP_PATH="$CONTAINER_BACKUP_DIR/$BACKUP_FILE"
+
+  echo "Backing up database: $DB"
+
+  sudo docker exec $CONTAINER \
+    /opt/mssql-tools18/bin/sqlcmd \
+    -S localhost,1433 \
+    -U sa \
+    -P "$SA_PASSWORD" \
+    -C \
+    -Q "BACKUP DATABASE [$DB]
+        TO DISK = '$BACKUP_PATH'
+        WITH COMPRESSION, INIT;"
+
+  echo "Verifying backup for database: $DB"
+
+  sudo docker exec $CONTAINER \
+    /opt/mssql-tools18/bin/sqlcmd \
+    -S localhost,1433 \
+    -U sa \
+    -P "$SA_PASSWORD" \
+    -C \
+    -Q "RESTORE VERIFYONLY FROM DISK = '$BACKUP_PATH';"
+done
+
+# 4. Copy backups from container to host
+echo "Copying backups to host..."
+sudo docker cp $CONTAINER:$CONTAINER_BACKUP_DIR/. "$HOST_BACKUP_DIR/$DATE/"
+
+# 5. Retain only last 7 days of backups on host
+echo "Cleaning host backups older than 7 days..."
+find "$HOST_BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \;
+
+echo "Backup completed successfully at $(date)"
+```
+
+### Setup Instructions
+
+#### Make script executable and run
+```bash
+sudo chmod +x /usr/local/bin/mssql_backup.sh
+sudo /usr/local/bin/mssql_backup.sh
+```
+
+#### Verify backups
+
+Inside container:
+```bash
+sudo docker exec mssql ls /var/opt/mssql/backups
+```
+
+On host:
+```bash
+ls /opt/mssql-backups
+```
+
+### Schedule with Cron
+
+Edit crontab:
+```bash
+sudo crontab -e
+```
+
+Add the following line to run backup daily at 2:00 AM:
+```bash
+0 2 * * * /usr/local/bin/mssql_backup.sh >> /var/log/mssql_backup.log 2>&1
+```
+
